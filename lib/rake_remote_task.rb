@@ -1,5 +1,6 @@
 require 'rubygems'
-require 'open4'
+#require 'open4'
+require 'systemu'
 require 'rake'
 require 'vlad'
 
@@ -93,7 +94,7 @@ class Rake::RemoteTask < Rake::Task
   def get local_dir, *files
     @happy = true
     host = target_host
-    rsync files.map { |f| "#{host}:#{f}" }, local_dir
+    rsync(files.map { |f| "#{host}:#{f}" }, local_dir)
     @happy = false
   end
 
@@ -102,7 +103,7 @@ class Rake::RemoteTask < Rake::Task
   # are copied to +remote_path+ and you may specify an optional
   # base_name for the tempfile (aids in debugging).
 
-  def put remote_path, base_name = File.basename(remote_path)
+  def put(remote_path, base_name = File.basename(remote_path))
     require 'tempfile'
     Tempfile.open base_name do |fp|
       fp.puts yield
@@ -146,46 +147,47 @@ class Rake::RemoteTask < Rake::Task
 
     trace = [ssh_cmd, ssh_flags, target_host, "'#{command}'"].flatten.join(' ')
     warn trace if $TRACE
-
-    pid, inn, out, err = popen4(*cmd)
-
-    inn.sync   = true
-    streams    = [out, err]
-    out_stream = {
-      out => $stdout,
-      err => $stderr,
-    }
-
-    # Handle process termination ourselves
-    status = nil
-    Thread.start do
-      status = Process.waitpid2(pid).last
-    end
-
-    until streams.empty? do
-      # don't busy loop
-      selected, = select streams, nil, nil, 0.1
-
-      next if selected.nil? or selected.empty?
-
-      selected.each do |stream|
-        if stream.eof? then
-          streams.delete stream if status # we've quit, so no more writing
-          next
-        end
-
-        data = stream.readpartial(1024)
-        out_stream[stream].write data
-
-        if stream == err and data =~ sudo_prompt then
-          inn.puts sudo_password
-          data << "\n"
-          $stderr.write "\n"
-        end
-
-        result << data
-      end
-    end
+    status, inn, out=systemu trace
+    warn([status,inn,out].join("\n")) if $TRACE
+#    pid, inn, out, err = popen4(*cmd)
+#
+#    inn.sync   = true
+#    streams    = [out, err]
+#    out_stream = {
+#      out => $stdout,
+#      err => $stderr,
+#    }
+#
+#    # Handle process termination ourselves
+#    status = nil
+#    Thread.start do
+#      status = Process.waitpid2(pid).last
+#    end
+#
+#    until streams.empty? do
+#      # don't busy loop
+#      selected, = select streams, nil, nil, 0.1
+#
+#      next if selected.nil? or selected.empty?
+#
+#      selected.each do |stream|
+#        if stream.eof? then
+#          streams.delete stream if status # we've quit, so no more writing
+#          next
+#        end
+#
+#        data = stream.readpartial(1024)
+#        out_stream[stream].write data
+#
+#        if stream == err and data =~ sudo_prompt then
+#          inn.puts sudo_password
+#          data << "\n"
+#          $stderr.write "\n"
+#        end
+#
+#        result << data
+#      end
+#    end
 
     unless status.success? then
       raise(Vlad::CommandFailedError,
@@ -426,7 +428,7 @@ class Rake::RemoteTask < Rake::Task
                :umask,              '02')
 
     set(:current_release)    { File.join(releases_path, releases[-1]) }
-    set(:latest_release)     { deploy_timestamped ?release_path: current_release }
+    set(:latest_release)     { deploy_timestamped ? release_path: current_release }
     set(:previous_release)   { File.join(releases_path, releases[-2]) }
     set(:release_name)       { Time.now.utc.strftime("%Y%m%d%H%M%S") }
     set(:release_path)       { File.join(releases_path, release_name) }
@@ -447,7 +449,7 @@ class Rake::RemoteTask < Rake::Task
         $stdout.print "sudo password: "
         $stdout.flush
         sudo_password = $stdin.gets
-        $stdout.puts
+        $stdout.puts ""
       ensure
         system "stty #{state}"
       end
